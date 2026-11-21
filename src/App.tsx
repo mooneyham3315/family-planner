@@ -93,36 +93,16 @@ interface Appointment {
   created_at?: string;
 }
 
+interface OverlapMatch {
+  appointment: Appointment;
+  reasons: string[];
+}
+
 function normalizeTime(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function isSameSlotOrDriverConflict(
-  candidate: {
-    id?: string | null;
-    member: string;
-    date: string;
-    time: string;
-  },
-  existing: Appointment
-): boolean {
-  if (candidate.id && existing.id === candidate.id) return false;
-  if (!candidate.date || existing.date !== candidate.date) return false;
-
-  const candidateTime = normalizeTime(candidate.time);
-  const existingTime = normalizeTime(existing.time);
-
-  const sameSpecificTime =
-    candidateTime !== '' &&
-    candidateTime !== 'all day' &&
-    candidateTime === existingTime;
-
-  const samePersonSameDay = existing.member === candidate.member;
-
-  return sameSpecificTime || samePersonSameDay;
-}
-
-function getConflictingAppointments(
+function getOverlapMatches(
   candidate: {
     id?: string | null;
     member: string;
@@ -130,10 +110,36 @@ function getConflictingAppointments(
     time: string;
   },
   allAppointments: Appointment[]
-): Appointment[] {
-  return allAppointments.filter((existing) =>
-    isSameSlotOrDriverConflict(candidate, existing)
-  );
+): OverlapMatch[] {
+  if (!candidate.date) return [];
+
+  const candidateTime = normalizeTime(candidate.time);
+  const matches: OverlapMatch[] = [];
+
+  for (const existing of allAppointments) {
+    if (candidate.id && existing.id === candidate.id) continue;
+    if (existing.date !== candidate.date) continue;
+
+    const existingTime = normalizeTime(existing.time);
+    const sameSpecificTime =
+      candidateTime !== '' &&
+      candidateTime !== 'all day' &&
+      candidateTime === existingTime;
+    const samePersonSameDate = existing.member === candidate.member;
+
+    if (samePersonSameDate || sameSpecificTime) {
+      const reasons: string[] = [`same date (${existing.date})`];
+      if (samePersonSameDate) {
+        reasons.push(`same person (${existing.member})`);
+      }
+      if (sameSpecificTime) {
+        reasons.push(`same time (${existing.time})`);
+      }
+      matches.push({ appointment: existing, reasons });
+    }
+  }
+
+  return matches;
 }
 
 function getTodayIsoDate(): string {
@@ -233,17 +239,17 @@ export function App() {
     setShowForm(true);
   }
 
-  const formConflicts = showForm
-    ? getConflictingAppointments(
+  const formOverlaps = showForm
+    ? getOverlapMatches(
         { id: editingId, member, date, time: time.trim() || 'All Day' },
         appointments
       )
     : [];
 
   const currentConflictKey =
-    formConflicts.length > 0
-      ? `${date}|${normalizeTime(time)}|${member}|${formConflicts
-          .map((c) => c.id)
+    formOverlaps.length > 0
+      ? `${date}|${normalizeTime(time)}|${member}|${formOverlaps
+          .map((m) => m.appointment.id)
           .sort()
           .join(',')}`
       : null;
@@ -516,8 +522,8 @@ export function App() {
               </div>
             </div>
 
-            {/* Pre-Save Conflict Warning (Dismissible, Non-Blocking) */}
-            {formConflicts.length > 0 && !isFormConflictDismissed && (
+            {/* Pre-Save Conflict Warning Calling Out Date & Details */}
+            {formOverlaps.length > 0 && !isFormConflictDismissed && (
               <div
                 role="alert"
                 className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-amber-950"
@@ -530,15 +536,17 @@ export function App() {
                     />
                     <div className="space-y-1">
                       <p className="font-bold">
-                        Check Driver &amp; Schedule Overlap Before Confirming
+                        Date &amp; Driver Overlap on {date} — Review Before Confirming
                       </p>
                       <p>
-                        This matches an existing appointment on <strong>{date}</strong>:
+                        You selected date <strong>{date}</strong> (time:{' '}
+                        <strong>{time.trim() || 'All Day'}</strong>), which overlaps with:
                       </p>
                       <ul className="list-disc pl-5">
-                        {formConflicts.map((c) => (
+                        {formOverlaps.map(({ appointment: c, reasons }) => (
                           <li key={c.id}>
-                            <strong>{c.title}</strong> — {c.member} at {c.time} ({c.location})
+                            <strong>{c.title}</strong> — {c.member} on <strong>{c.date}</strong> at{' '}
+                            {c.time} ({c.location}) — <em>{reasons.join(', ')}</em>
                           </li>
                         ))}
                       </ul>
@@ -561,10 +569,11 @@ export function App() {
               </div>
             )}
 
-            {formConflicts.length > 0 && isFormConflictDismissed && (
+            {formOverlaps.length > 0 && isFormConflictDismissed && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-700">
                 <span>
-                  Overlap warning dismissed for this slot—you can still save or review again.
+                  Date overlap warning on <strong>{date}</strong> dismissed—you can still save or
+                  review again.
                 </span>
                 <button
                   type="button"
@@ -593,7 +602,7 @@ export function App() {
                   ? 'Saving...'
                   : editingId
                     ? 'Update Appointment'
-                    : formConflicts.length > 0 && !isFormConflictDismissed
+                    : formOverlaps.length > 0 && !isFormConflictDismissed
                       ? 'Confirm & Save Anyway'
                       : 'Save Appointment'}
               </button>
@@ -616,9 +625,9 @@ export function App() {
             filteredAppointments.map((appt) => {
               const style =
                 MEMBER_STYLES[appt.member as FamilyMember] ?? FALLBACK_STYLE;
-              const conflicts = getConflictingAppointments(appt, appointments);
+              const overlaps = getOverlapMatches(appt, appointments);
               const showCardConflict =
-                conflicts.length > 0 && !dismissedCardIds[appt.id];
+                overlaps.length > 0 && !dismissedCardIds[appt.id];
 
               return (
                 <article
@@ -689,9 +698,12 @@ export function App() {
                           aria-hidden="true"
                         />
                         <div>
-                          <strong>Schedule overlap:</strong> Overlaps with{' '}
-                          {conflicts
-                            .map((c) => `${c.title} (${c.member}, ${c.time})`)
+                          <strong>Date overlap on {appt.date}:</strong> Overlaps with{' '}
+                          {overlaps
+                            .map(
+                              ({ appointment: c }) =>
+                                `${c.title} (${c.member}, date ${c.date}, ${c.time})`
+                            )
                             .join(', ')}
                           .
                         </div>
