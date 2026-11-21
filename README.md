@@ -1,75 +1,41 @@
-# React + TypeScript + Vite
+# Family Appointment Planner
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A shared, accessibility-first family appointment planner built with React, TypeScript, Tailwind CSS v4, and Supabase. Designed so multiple generations—including kids, parents, and grandparents—can view, filter, and manage upcoming appointments without calendar clutter.
 
-Currently, two official plugins are available:
+## Why I Built It
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Coordinating schedules across multiple family members often breaks down when tools are either overcomplicated or hard to read on a phone or tablet. I built **Family Appointment Planner** as a practical household web app and a portfolio project demonstrating full-stack CRUD state management, real-time database synchronization, and clean UI structure.
 
-## React Compiler
+## Key Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Individual Member Filtering:** Filter appointments across **Everyone** or drill down to a single person (**Tom**, **Kandi**, **Faith**, **Granger**, **Amy**, **Charlie**, **Betty**, and **Robert**) with distinct color badges and card accents.
+- **Large Print Accessibility Mode:** One-click toggle that enlarges typography and button tap targets for easier reading on mobile and tablet screens.
+- **Full CRUD Persistence:** Create, edit, and delete appointments backed by Supabase PostgreSQL.
+- **Real-Time Updates:** Subscribes to `postgres_changes` on the `appointments` table so edits sync across active sessions without manual refreshes.
 
-## Expanding the ESLint configuration
+## Tech Stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **Frontend:** React, TypeScript, Vite
+- **Styling & Icons:** Tailwind CSS v4, Lucide React
+- **Backend & Database:** Supabase (PostgreSQL + Realtime subscriptions)
+- **Deployment:** Netlify
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Database Schema (`appointments`)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+| Column | Type | Notes |
+| :--- | :--- | :--- |
+| `id` | `uuid` / `bigint` | Primary key |
+| `title` | `text` | Appointment name or purpose |
+| `member` | `text` | Assigned family member (`Tom`, `Kandi`, `Faith`, `Granger`, `Amy`, `Charlie`, `Betty`, `Robert`) |
+| `date` | `date` | Scheduled appointment date (`YYYY-MM-DD`) |
+| `time` | `text` | Scheduled time (defaults to `All Day` if blank) |
+| `location` | `text` | Clinic, school, address, or `TBD` |
+| `notes` | `text` | Optional reminders or paperwork notes |
+| `created_at` | `timestamptz` | Creation timestamp |
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Local Setup
 
-```
-
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+1. **Clone the repository**
+   ```bash
+   git clone [https://github.com/mooneyham3315/family-planner.git](https://github.com/mooneyham3315/family-planner.git)
+   cd family-planner
