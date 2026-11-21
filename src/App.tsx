@@ -98,6 +98,10 @@ interface OverlapMatch {
   reasons: string[];
 }
 
+function normalizeDate(value: string): string {
+  return value.trim().slice(0, 10);
+}
+
 function normalizeTime(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -111,32 +115,33 @@ function getOverlapMatches(
   },
   allAppointments: Appointment[]
 ): OverlapMatch[] {
-  if (!candidate.date) return [];
+  const candidateDate = normalizeDate(candidate.date);
+  if (!candidateDate) return [];
 
   const candidateTime = normalizeTime(candidate.time);
   const matches: OverlapMatch[] = [];
 
   for (const existing of allAppointments) {
     if (candidate.id && existing.id === candidate.id) continue;
-    if (existing.date !== candidate.date) continue;
+    const existingDate = normalizeDate(existing.date);
+    if (existingDate !== candidateDate) continue;
 
     const existingTime = normalizeTime(existing.time);
     const sameSpecificTime =
       candidateTime !== '' &&
       candidateTime !== 'all day' &&
       candidateTime === existingTime;
-    const samePersonSameDate = existing.member === candidate.member;
+    const samePerson = existing.member === candidate.member;
 
-    if (samePersonSameDate || sameSpecificTime) {
-      const reasons: string[] = [`same date (${existing.date})`];
-      if (samePersonSameDate) {
-        reasons.push(`same person (${existing.member})`);
-      }
-      if (sameSpecificTime) {
-        reasons.push(`same time (${existing.time})`);
-      }
-      matches.push({ appointment: existing, reasons });
+    const reasons: string[] = [`same date (${existingDate})`];
+    if (sameSpecificTime) {
+      reasons.push(`same time (${existing.time})`);
     }
+    if (samePerson) {
+      reasons.push(`same person (${existing.member})`);
+    }
+
+    matches.push({ appointment: existing, reasons });
   }
 
   return matches;
@@ -231,7 +236,7 @@ export function App() {
         ? (appt.member as FamilyMember)
         : 'Charlie'
     );
-    setDate(appt.date);
+    setDate(normalizeDate(appt.date));
     setTime(appt.time);
     setLocation(appt.location === 'TBD' ? '' : appt.location);
     setNotes(appt.notes ?? '');
@@ -239,16 +244,17 @@ export function App() {
     setShowForm(true);
   }
 
+  const normalizedFormDate = normalizeDate(date);
   const formOverlaps = showForm
     ? getOverlapMatches(
-        { id: editingId, member, date, time: time.trim() || 'All Day' },
+        { id: editingId, member, date: normalizedFormDate, time: time.trim() || 'All Day' },
         appointments
       )
     : [];
 
   const currentConflictKey =
     formOverlaps.length > 0
-      ? `${date}|${normalizeTime(time)}|${member}|${formOverlaps
+      ? `${normalizedFormDate}|${normalizeTime(time)}|${member}|${formOverlaps
           .map((m) => m.appointment.id)
           .sort()
           .join(',')}`
@@ -259,7 +265,7 @@ export function App() {
 
   async function handleSaveAppointment(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || !date.trim()) return;
+    if (!title.trim() || !normalizedFormDate) return;
 
     setSaving(true);
     setErrorMsg(null);
@@ -267,7 +273,7 @@ export function App() {
     const payload = {
       title: title.trim(),
       member,
-      date,
+      date: normalizedFormDate,
       time: time.trim() || 'All Day',
       location: location.trim() || 'TBD',
       notes: notes.trim() || null,
@@ -522,7 +528,7 @@ export function App() {
               </div>
             </div>
 
-            {/* Pre-Save Conflict Warning Calling Out Date & Details */}
+            {/* Pre-Save Same-Date Warning (Dismissible, Non-Blocking) */}
             {formOverlaps.length > 0 && !isFormConflictDismissed && (
               <div
                 role="alert"
@@ -536,17 +542,18 @@ export function App() {
                     />
                     <div className="space-y-1">
                       <p className="font-bold">
-                        Date &amp; Driver Overlap on {date} — Review Before Confirming
+                        Same-Date Appointment Alert on {normalizedFormDate} — Review Before Confirming
                       </p>
                       <p>
-                        You selected date <strong>{date}</strong> (time:{' '}
-                        <strong>{time.trim() || 'All Day'}</strong>), which overlaps with:
+                        Another family appointment is already scheduled on{' '}
+                        <strong>{normalizedFormDate}</strong> (regardless of who it is for):
                       </p>
                       <ul className="list-disc pl-5">
                         {formOverlaps.map(({ appointment: c, reasons }) => (
                           <li key={c.id}>
-                            <strong>{c.title}</strong> — {c.member} on <strong>{c.date}</strong> at{' '}
-                            {c.time} ({c.location}) — <em>{reasons.join(', ')}</em>
+                            <strong>{c.title}</strong> — {c.member} on{' '}
+                            <strong>{normalizeDate(c.date)}</strong> at {c.time} ({c.location}) —{' '}
+                            <em>{reasons.join(', ')}</em>
                           </li>
                         ))}
                       </ul>
@@ -572,8 +579,8 @@ export function App() {
             {formOverlaps.length > 0 && isFormConflictDismissed && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-700">
                 <span>
-                  Date overlap warning on <strong>{date}</strong> dismissed—you can still save or
-                  review again.
+                  Same-date warning on <strong>{normalizedFormDate}</strong> dismissed—you can still
+                  save or review again.
                 </span>
                 <button
                   type="button"
@@ -628,6 +635,7 @@ export function App() {
               const overlaps = getOverlapMatches(appt, appointments);
               const showCardConflict =
                 overlaps.length > 0 && !dismissedCardIds[appt.id];
+              const apptDate = normalizeDate(appt.date);
 
               return (
                 <article
@@ -669,7 +677,7 @@ export function App() {
                   <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-slate-700">
                     <span className="inline-flex items-center gap-1.5">
                       <Calendar className="h-4 w-4 text-slate-500" aria-hidden="true" />
-                      {appt.date}
+                      {apptDate}
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                       <Clock className="h-4 w-4 text-slate-500" aria-hidden="true" />
@@ -698,11 +706,11 @@ export function App() {
                           aria-hidden="true"
                         />
                         <div>
-                          <strong>Date overlap on {appt.date}:</strong> Overlaps with{' '}
+                          <strong>Same date ({apptDate}):</strong> Also scheduled on{' '}
                           {overlaps
                             .map(
                               ({ appointment: c }) =>
-                                `${c.title} (${c.member}, date ${c.date}, ${c.time})`
+                                `${c.title} (${c.member}, date ${normalizeDate(c.date)}, ${c.time})`
                             )
                             .join(', ')}
                           .
