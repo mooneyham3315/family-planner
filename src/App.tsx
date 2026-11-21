@@ -16,10 +16,19 @@ export const FAMILY_MEMBERS = [
 export type FamilyMember = (typeof FAMILY_MEMBERS)[number];
 type MemberFilter = 'all' | FamilyMember;
 
-export const MEMBER_STYLES: Record<
-  FamilyMember,
-  { pill: string; badge: string; border: string }
-> = {
+interface MemberStyle {
+  pill: string;
+  badge: string;
+  border: string;
+}
+
+const FALLBACK_STYLE: MemberStyle = {
+  pill: 'bg-slate-100 text-slate-900 border-slate-300',
+  badge: 'bg-slate-700 text-white border-slate-800',
+  border: 'border-l-slate-600',
+};
+
+export const MEMBER_STYLES: Record<FamilyMember, MemberStyle> = {
   Tom: {
     pill: 'bg-sky-100 text-sky-900 border-sky-300',
     badge: 'bg-sky-600 text-white border-sky-700',
@@ -65,7 +74,7 @@ export const MEMBER_STYLES: Record<
 interface Appointment {
   id: string;
   title: string;
-  member: FamilyMember;
+  member: string;
   date: string;
   time: string;
   location: string;
@@ -152,7 +161,11 @@ export function App() {
   function startEditAppointment(appt: Appointment) {
     setEditingId(appt.id);
     setTitle(appt.title);
-    setMember(appt.member);
+    setMember(
+      FAMILY_MEMBERS.includes(appt.member as FamilyMember)
+        ? (appt.member as FamilyMember)
+        : 'Charlie'
+    );
     setDate(appt.date);
     setTime(appt.time);
     setLocation(appt.location === 'TBD' ? '' : appt.location);
@@ -455,7 +468,8 @@ export function App() {
             </div>
           ) : (
             filteredAppointments.map((appt) => {
-              const style = MEMBER_STYLES[appt.member];
+              const style =
+                MEMBER_STYLES[appt.member as FamilyMember] ?? FALLBACK_STYLE;
               return (
                 <article
                   key={appt.id}
