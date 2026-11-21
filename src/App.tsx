@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Calendar, Clock, MapPin, Pencil, Plus, Trash2, Type, Users } from 'lucide-react';
+import {
+  AlertTriangle,
+  Calendar,
+  Clock,
+  MapPin,
+  Pencil,
+  Plus,
+  Trash2,
+  Type,
+  Users,
+  X,
+} from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 export const FAMILY_MEMBERS = [
@@ -82,6 +93,49 @@ interface Appointment {
   created_at?: string;
 }
 
+function normalizeTime(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isSameSlotOrDriverConflict(
+  candidate: {
+    id?: string | null;
+    member: string;
+    date: string;
+    time: string;
+  },
+  existing: Appointment
+): boolean {
+  if (candidate.id && existing.id === candidate.id) return false;
+  if (!candidate.date || existing.date !== candidate.date) return false;
+
+  const candidateTime = normalizeTime(candidate.time);
+  const existingTime = normalizeTime(existing.time);
+
+  const sameSpecificTime =
+    candidateTime !== '' &&
+    candidateTime !== 'all day' &&
+    candidateTime === existingTime;
+
+  const samePersonSameDay = existing.member === candidate.member;
+
+  return sameSpecificTime || samePersonSameDay;
+}
+
+function getConflictingAppointments(
+  candidate: {
+    id?: string | null;
+    member: string;
+    date: string;
+    time: string;
+  },
+  allAppointments: Appointment[]
+): Appointment[] {
+  return allAppointments.filter((existing) =>
+    isSameSlotOrDriverConflict(candidate, existing)
+  );
+}
+
 function getTodayIsoDate(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -106,6 +160,10 @@ export function App() {
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState<boolean>(false);
+
+  // Tracks the conflict signature the user explicitly dismissed so changing date/time/member re-triggers it
+  const [dismissedConflictKey, setDismissedConflictKey] = useState<string | null>(null);
+  const [dismissedCardIds, setDismissedCardIds] = useState<Record<string, boolean>>({});
 
   async function fetchAppointments() {
     setErrorMsg(null);
@@ -150,6 +208,7 @@ export function App() {
     setLocation('');
     setNotes('');
     setEditingId(null);
+    setDismissedConflictKey(null);
     setShowForm(false);
   }
 
@@ -170,8 +229,27 @@ export function App() {
     setTime(appt.time);
     setLocation(appt.location === 'TBD' ? '' : appt.location);
     setNotes(appt.notes ?? '');
+    setDismissedConflictKey(null);
     setShowForm(true);
   }
+
+  const formConflicts = showForm
+    ? getConflictingAppointments(
+        { id: editingId, member, date, time: time.trim() || 'All Day' },
+        appointments
+      )
+    : [];
+
+  const currentConflictKey =
+    formConflicts.length > 0
+      ? `${date}|${normalizeTime(time)}|${member}|${formConflicts
+          .map((c) => c.id)
+          .sort()
+          .join(',')}`
+      : null;
+
+  const isFormConflictDismissed =
+    currentConflictKey !== null && dismissedConflictKey === currentConflictKey;
 
   async function handleSaveAppointment(e: React.FormEvent) {
     e.preventDefault();
@@ -206,7 +284,9 @@ export function App() {
 
       if (data && data.length > 0) {
         const updated = data[0] as Appointment;
-        setAppointments((prev) => prev.map((item) => (item.id === editingId ? updated : item)));
+        setAppointments((prev) =>
+          prev.map((item) => (item.id === editingId ? updated : item))
+        );
       } else {
         await fetchAppointments();
       }
@@ -436,6 +516,66 @@ export function App() {
               </div>
             </div>
 
+            {/* Pre-Save Conflict Warning (Dismissible, Non-Blocking) */}
+            {formConflicts.length > 0 && !isFormConflictDismissed && (
+              <div
+                role="alert"
+                className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-amber-950"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle
+                      className="mt-0.5 h-5 w-5 shrink-0 text-amber-700"
+                      aria-hidden="true"
+                    />
+                    <div className="space-y-1">
+                      <p className="font-bold">
+                        Check Driver &amp; Schedule Overlap Before Confirming
+                      </p>
+                      <p>
+                        This matches an existing appointment on <strong>{date}</strong>:
+                      </p>
+                      <ul className="list-disc pl-5">
+                        {formConflicts.map((c) => (
+                          <li key={c.id}>
+                            <strong>{c.title}</strong> — {c.member} at {c.time} ({c.location})
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="pt-1 text-sm text-amber-900">
+                        If parents or grandparents are seeing the same doctor together, you can
+                        dismiss this warning and still save.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setDismissedConflictKey(currentConflictKey)}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-sm font-semibold text-amber-950 hover:bg-amber-100"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                    Dismiss Warning
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {formConflicts.length > 0 && isFormConflictDismissed && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-700">
+                <span>
+                  Overlap warning dismissed for this slot—you can still save or review again.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDismissedConflictKey(null)}
+                  className="font-semibold text-blue-700 underline hover:text-blue-900"
+                >
+                  Show Warning Again
+                </button>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
@@ -449,7 +589,13 @@ export function App() {
                 disabled={saving}
                 className="rounded-lg bg-blue-700 px-5 py-2 font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
               >
-                {saving ? 'Saving...' : editingId ? 'Update Appointment' : 'Save Appointment'}
+                {saving
+                  ? 'Saving...'
+                  : editingId
+                    ? 'Update Appointment'
+                    : formConflicts.length > 0 && !isFormConflictDismissed
+                      ? 'Confirm & Save Anyway'
+                      : 'Save Appointment'}
               </button>
             </div>
           </form>
@@ -470,6 +616,10 @@ export function App() {
             filteredAppointments.map((appt) => {
               const style =
                 MEMBER_STYLES[appt.member as FamilyMember] ?? FALLBACK_STYLE;
+              const conflicts = getConflictingAppointments(appt, appointments);
+              const showCardConflict =
+                conflicts.length > 0 && !dismissedCardIds[appt.id];
+
               return (
                 <article
                   key={appt.id}
@@ -526,6 +676,40 @@ export function App() {
                     <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-slate-700">
                       <strong className="font-semibold">Note:</strong> {appt.notes}
                     </p>
+                  )}
+
+                  {showCardConflict && (
+                    <div
+                      role="alert"
+                      className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-950"
+                    >
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle
+                          className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"
+                          aria-hidden="true"
+                        />
+                        <div>
+                          <strong>Schedule overlap:</strong> Overlaps with{' '}
+                          {conflicts
+                            .map((c) => `${c.title} (${c.member}, ${c.time})`)
+                            .join(', ')}
+                          .
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDismissedCardIds((prev) => ({
+                            ...prev,
+                            [appt.id]: true,
+                          }))
+                        }
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-amber-950 hover:bg-amber-100"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
                   )}
                 </article>
               );
